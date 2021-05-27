@@ -1,7 +1,7 @@
 #include <stdio.h>
 #include <stdlib.h>
-#include <unistd.h>
 #include <stdbool.h>
+#include <string.h>
 
 #define MAX_LINE_LENGTH 50
 #define MAX_NUM_LINES 200
@@ -11,7 +11,12 @@
 const char tags[14][6] = {"html", "head", "body", "title", "h1", "h2", "h3", "p", "ul", "li", "a", "div", "br", "hr"};
 
 bool validTag(char* s){
-    return true;
+    for (int i=0; i<14; i++){
+        if (!strcmp(s, tags[i])){
+            return true;
+        }
+    }
+    return false;
 }
 
 struct tag {
@@ -20,7 +25,7 @@ struct tag {
 };
 
 struct tag* createTag(char* type, bool closing){
-    struct tag *newTag = calloc(sizeof(struct tag), 1);
+    struct tag* newTag = calloc(sizeof(struct tag), 1);
 
     newTag->type = calloc(sizeof(char), strlen(type)+1);
     strcpy(newTag->type, type);
@@ -31,14 +36,23 @@ struct tag* createTag(char* type, bool closing){
     return newTag;
 }
 
-void resetLine(char* line){
-    for (int i=0; i<MAX_LINE_LENGTH; i++){
-        *(line+i) = 0;
+void displayTags(struct tag** tagStream){
+    printf("Displaying tags...\n");
+    int i=0;
+    while (true){
+        struct tag* currentTag = *(tagStream+i);
+
+        if (currentTag == NULL){
+            break;
+        } else{
+            printf("Tag %i: %s, %s\n", i, currentTag->type, *(currentTag->closing) ? "closing" : "opening");
+        }
+        i++;
     }
 }
 
 void raiseError(int row, int column, char* message){
-    printf("ERROR at row %i, column %i\n%s", row, column, message);
+    printf("ERROR in row %i, column %i\n%s", row, column, message);
     exit(-1);
 }
 
@@ -49,7 +63,6 @@ FILE* openFile(){
         printf("Failed to read file - please make sure the file 'file.html' is placed in '/src'.");
         exit(-1);
     } else {
-        printf("File opened successfully.\n\n");
         return file;
     }
 }
@@ -77,9 +90,7 @@ char** getFileContents(FILE* filep){
     return content;
 }
 
-struct tag* processTag(char* line){
-    printf("Processing %s", line);
-
+struct tag* processTag(char* line, int row, int column){
     bool closing;
     
     if (*(line+1) == '/'){
@@ -89,8 +100,7 @@ struct tag* processTag(char* line){
     }
 
     //Try to match tag:
-
-    char type[6] = {0, 0, 0, 0, 0, '\0'}; //The longest tag in the specification is 'title', which has 5 chars. Include space for EOL char.
+    char type[6] = "\0"; //The longest tag in the specification is 'title', which has 5 chars. Include space for EOL char.
     char currentChar;
     int index = 0;
 
@@ -107,10 +117,11 @@ struct tag* processTag(char* line){
     }
 
     if (validTag(type)){
-        printf(closing ? "close\n" : "open\n");
         return createTag(type, closing);
     } else {
-        return NULL;
+        char errorMessage[TAG_LENGTH+30] = "Failed to recognise tag ";
+        strcat(errorMessage, line);
+        raiseError(row, column, errorMessage);
     }
 }
 
@@ -124,6 +135,7 @@ struct tag** tokenise(char** content){
     int currentIndex = 0; //Used to update current string
 
     for (int i=0; i<MAX_NUM_LINES; i++){ //For each line
+
         char* currentLine = *(content+i);
 
         if (currentLine == NULL){
@@ -150,17 +162,13 @@ struct tag** tokenise(char** content){
                     *(currentTag+currentIndex) = '>';
 
                     //Tag correctly closed. Try and match tag, and add to tagStream if valid.
-                    struct tag* newTag = processTag(currentTag);
-
-                    if (newTag == NULL){
-                        raiseError(i+1, j+1, strcat("Failed to recognise tag: ", currentTag));
-                    }
+                    struct tag* newTag = processTag(currentTag, i, j); //Pass i and j so error can be raised properly
 
                     *(tagStream+tagIndex) = newTag;
                     tagIndex++;
 
                     inTag = false;
-                    resetLine(currentTag); //Reset currentTag to contain nothing
+                    memset(currentTag, '\0', sizeof currentTag); //Reset currentTag to contain nothing
                 }
 
             } else if (inTag){ //If we are in a tag, track the string inside
@@ -172,30 +180,83 @@ struct tag** tokenise(char** content){
     return tagStream;
 }
 
-int main(){
-    printf("Opening file...\n");
-    FILE* filep = openFile();
-
-    printf("Reading file contents...\n");
-    char** fileContents = getFileContents(filep);
-
-    printf("Lexing...\n");
-    struct tag** tagStream = tokenise(fileContents);
+void checkNesting(struct tag** tagStream){
+    struct tag** tagStack = calloc(sizeof(struct tag*), MAX_NUM_TAGS);
+    int head = 0; //Head always sits at the index of the null character
 
     for (int i=0; i<MAX_NUM_TAGS; i++){
-        struct tag* newTag = *(tagStream+i);
+        struct tag* currentTag = *(tagStream+i);
 
-        if (newTag == NULL){
+        //If we've reached the end of the taglist, exit
+        if (currentTag == NULL){
             break;
         }
 
-        struct tag actualTag = *(newTag);
+        //<br> and <hr> cannot be improperly nested
+        if (!strcmp(currentTag->type, "br") || !strcmp(currentTag->type, "hr")){
+            continue;
+        }
 
-        printf("Type: %s ", actualTag.type);
-        printf(actualTag.closing ? "closing\n" : "opening\n");
+        if (!*(currentTag->closing)){
+            //If opening tag, push onto stack
+            tagStack[head] = currentTag;
+            head++;
+            tagStack[head] = '\0';
+        } else{
+            //If closing tag, pop from stack. If the types are different, it's incorrectly nested
+            if (head==0 || strcmp(tagStack[head-1]->type, currentTag->type) ){ //True if the tags are not the same type
+                char errorMessage[TAG_LENGTH+30] = "Tags improperly nested: ";
+                strcat(errorMessage, currentTag->type);
+                raiseError(69, 69, errorMessage);
+            } else{
+                tagStack[head] = '\0';
+                head--;
+            }
+        }
+
+    }
+}
+
+void checkHTML(struct tag** tagStream){
+    char errorMessage[] = "The entire file should be wrapped in <html> tags.";
+
+    //Check if first tag is <html>
+    if ( strcmp( (*(tagStream))->type, "html" ) ){
+        raiseError(69, 69, errorMessage);
     }
 
-    printf("Parsing...");
+    //Find last tag and check if it's html
+    for (int i=0; i<MAX_NUM_TAGS; i++){
+        if ( *(tagStream+i) == NULL){
+            if (strcmp((*(tagStream+i-1))->type, "html")){
+                raiseError(69, 69, errorMessage);
+            }
+        }
+    }
+}
+
+void parse(struct tag** tagStream){
+    checkNesting(tagStream);
+    checkHTML(tagStream); //Checks if the <html></html> lies on the outside of the file
+    //checkHeadandBody(tagStream);
+}
+
+int main(){
+    printf("Opening file...\n\n");
+    FILE* filep = openFile();
+
+    printf("Reading file contents...\n\n");
+    char** fileContents = getFileContents(filep);
+
+    printf("Lexing...\n\n");
+    struct tag** tagStream = tokenise(fileContents);
+
+    displayTags(tagStream);
+
+    printf("Parsing...\n\n");
+    parse(tagStream);
+
+    printf("Parsing successful.");
 
     fclose(filep);
 }
