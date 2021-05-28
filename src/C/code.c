@@ -247,6 +247,7 @@ void checkHeadAndBody(struct tag** tagStream){
 void finalCheck(struct tag** tagStream){
     bool inHead = false;
     bool inP = false;
+    bool htmlFound = false;
 
     for (int i=0; i<MAX_NUM_TAGS; i++){
         struct tag* currentTag = *(tagStream+i);
@@ -272,6 +273,12 @@ void finalCheck(struct tag** tagStream){
         } else if (!strcmp(currentTag->type, "div")){
             if (inP){
                 raiseError(-1, -1, "<div> tags may not be nested inside <p> tags.");
+            }
+        } else if (!strcmp(currentTag->type, "html") && !*(currentTag->closing)){
+            if (htmlFound){
+                raiseError(-1, -1, "Only one <html> section should exist.");
+            } else {
+                htmlFound = true;
             }
         }
     }
