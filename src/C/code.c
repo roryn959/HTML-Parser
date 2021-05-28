@@ -230,15 +230,51 @@ void checkHTML(struct tag** tagStream){
         if ( *(tagStream+i) == NULL){
             if (strcmp((*(tagStream+i-1))->type, "html")){
                 raiseError(69, 69, errorMessage);
+            } else{
+                return;
             }
         }
+    }
+}
+
+void checkHeadAndBody(struct tag** tagStream){
+    bool headerFound = false;
+    bool bodyFound = false;
+
+    for (int i=0; i<MAX_NUM_TAGS; i++){
+        struct tag* currentTag = *(tagStream+i);
+
+        if (currentTag == NULL){
+            break;
+        } else if (!strcmp(currentTag->type, "head")){
+            if (headerFound){
+                raiseError(69, 69, "Only one header section allowed.");
+            } else if (bodyFound){
+                raiseError(69, 69, "Header may only come before body.");
+            } else if (*currentTag->closing){ //We may assume nesting is correct. In this case, mark as found upon closing tag
+                headerFound = true;
+            }
+        } else if (!strcmp(currentTag->type, "body")){
+            if (!headerFound){
+                raiseError(69, 69, "The header must come before the body.");
+            } else if (bodyFound){
+                raiseError(69, 69, "Only one body is allowed.");
+            } else if (*currentTag->closing){
+                bodyFound = true;
+            }
+        }
+    }
+
+    if (!(headerFound && bodyFound)){
+        raiseError(69, 69, "The must be both a single header section and a single body section");
     }
 }
 
 void parse(struct tag** tagStream){
     checkNesting(tagStream);
     checkHTML(tagStream); //Checks if the <html></html> lies on the outside of the file
-    //checkHeadandBody(tagStream);
+    checkHeadAndBody(tagStream); //Checks if there is a single head followed by a single body
+    //finalCheck(tagStream); //Checks for remaining rules, such as no nesting <p> tags.
 }
 
 int main(){
@@ -250,8 +286,6 @@ int main(){
 
     printf("Lexing...\n\n");
     struct tag** tagStream = tokenise(fileContents);
-
-    displayTags(tagStream);
 
     printf("Parsing...\n\n");
     parse(tagStream);
