@@ -270,11 +270,52 @@ void checkHeadAndBody(struct tag** tagStream){
     }
 }
 
+void finalCheck(struct tag** tagStream){
+    bool inHead = false;
+    bool inP = false;
+
+    for (int i=0; i<MAX_NUM_TAGS; i++){
+        struct tag* currentTag = *(tagStream+i);
+
+        if (currentTag == NULL){
+            break;
+        }
+
+        if (!strcmp(currentTag->type, "head")){ //Update whether we're in head
+            /*
+            if (*currentTag->closing){
+                inHead = false;
+            } else{
+                inHead = true
+            } */
+            inHead = !(*currentTag->closing);
+        } else if (!strcmp(currentTag->type, "title")){ //Check title tags are inside head
+            if (!inHead){
+                raiseError(69, 69, "<title> tags should only be in head sections.");
+            }
+        } else if (!strcmp(currentTag->type, "p")){
+            if (inP){
+                if (*currentTag->closing){
+                    inP = false;
+                } else {
+                    raiseError(69, 69, "<p> tags should not be nested.");
+                }
+            } else {
+                inP = true;
+            }
+        } else if (!strcmp(currentTag->type, "div")){
+            if (inP){
+                raiseError(69, 69, "<div> tags may not be nested inside <p> tags.");
+            }
+        }
+    }
+}
+
 void parse(struct tag** tagStream){
     checkNesting(tagStream);
     checkHTML(tagStream); //Checks if the <html></html> lies on the outside of the file
     checkHeadAndBody(tagStream); //Checks if there is a single head followed by a single body
-    //finalCheck(tagStream); //Checks for remaining rules, such as no nesting <p> tags.
+    finalCheck(tagStream); //Checks for remaining rules, such as no nesting <p> tags.
 }
 
 int main(){
