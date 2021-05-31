@@ -35,13 +35,11 @@ validTag tag = (tag `elem` tagList) || ( tag `elem` (map (\x -> '/':x) tagList) 
 lex' :: [String] -> String -> Bool -> Bool -> String -> [String]
 --If at EOF, check if still in a tag. If so, if needs to be closed. Else, return tokens
 lex' tokenStream currentTag inTag inAttributes "" = if inTag then error "Missing a '>' - unclosed tag" else tokenStream
-
 --If we see '<', should not be in a tag. Start paying attention to characters. Should not be in attributes yet
 lex' tokenStream currentTag inTag inAttributes ('<':xs) = 
     if inTag then
         error "'<' should not appear in tag definition"
     else lex' tokenStream "" True False xs
-
 --If we see '>', no longer in tag or attributes.
 lex' tokenStream currentTag inTag inAttributes ('>':xs) = 
     if not inTag then 
@@ -49,16 +47,12 @@ lex' tokenStream currentTag inTag inAttributes ('>':xs) =
     else if validTag currentTag then
         lex' (tokenStream++[currentTag]) "" False False xs
     else error ("Could not match the tag <" ++ currentTag ++ ">")
-
 --If we meet a space inside a tag, we are now in the attributes section. Should not be inAttributes
 lex' tokenStream currentTag True False (' ':xs) = lex' tokenStream currentTag True True xs
-
 --If we are in a tag and in attributes, ignore them
 lex' tokenStream currentTag True True (x:xs) = lex' tokenStream currentTag True True xs
-
 --If in tag but not attributes, we need to keep track of the characters
 lex' tokenStream currentTag True False (x:xs) = lex' tokenStream (currentTag++[x]) True False xs
-
 --If not in a tag, just ignore character
 lex' tokenStream currentTag False inAttributes (x:xs) = lex' tokenStream currentTag False inAttributes xs
 
